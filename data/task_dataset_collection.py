@@ -9,4 +9,4 @@ from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 from utils.dataset_utils import *
 
-Class
+class

@@ -30,3 +30,23 @@ def mixup(x,y,criterion,net,alpha = 0.8):
     return loss
 
 # 
+def check_attr(args,attr = 'attention_norm'):
+    if not hasattr(args, attr):
+        setattr(args, attr, False)
+        
+def custom_print_decorator(func):
+    def wrapper(*args, **kwargs):
+        text = ' '.join(map(str, args))
+        if 'file' not in kwargs or kwargs['file'] is None:
+            sys.stdout.write(text + '\n')
+        else:
+            kwargs['file'].write(text + '\n')
+
+        if 'folder' in kwargs and kwargs['folder']:
+            with open(f'{kwargs["folder"]}/finetune_output.log', 'a') as log_file:
+                log_file.write(text + '\n')
+        if 'folder' in kwargs:
+            del kwargs['folder']
+        if 'file' in kwargs:
+            del kwargs['file']
+    return wrapper
