@@ -1,0 +1,38 @@
+model/reference
+model/reference
+# 编译产生的文件
+*.o
+*.a
+*.so
+/save
+*.pyc
+# 日志文件
+*.log
+wandb/
+# 临时文件
+*.tmp
+
+# IDE生成的文件
+.idea/
+*.iml
+
+# Node.js 产生的文件
+node_modules/
+
+# Python 产生的文件
+__pycache__/
+*.py[cod]
+
+# macOS 产生的文件
+.DS_Store
+*.pyc
+__pycache__/
+MCN-main-main/
+TFN-main/
+*.pdf
+*.png
+*.csv
+*.ai
+*.npy
+*.svg
+./post
