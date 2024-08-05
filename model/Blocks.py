@@ -13,6 +13,8 @@ from torch.nn.modules.container import Sequential
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 import collections.abc
+from functools import partial
+
 
 ACTIVATION = {'gelu':nn.GELU(),
               'tanh':nn.Tanh(),
@@ -23,7 +25,7 @@ ACTIVATION = {'gelu':nn.GELU(),
               'ELU':nn.ELU(),
               'silu':nn.SiLU()}
 
-#%% embedding
+#%% 1. embedding
 class LearnablePositionalEmbedding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super(LearnablePositionalEmbedding, self).__init__()
@@ -45,10 +47,6 @@ class LearnablePositionalEmbedding(nn.Module):
 
     def forward(self, x, offset=0):
         return self.pe[:, :, offset:offset+x.size(2)]
-
-# class PatchEmbedding(nn.Module): # TODO check
-#     def __init__(self, in_dim, patch_len, stride, pad, dropout):
-#         super(PatchEmbedding, self).__init__()
 
 class PatchEmbedding(nn.Module):
     def __init__(self, d_model, patch_len, stride, padding, dropout):
@@ -127,8 +125,7 @@ class CrossAttention(nn.Module):
         return x
 
 
-#%% MLP block
-
+#%% 2. MLP block
 class DynamicLinear(nn.Module):
     
     """
@@ -172,73 +169,10 @@ class DynamicLinear(nn.Module):
                 1, out_features), mode='bilinear', align_corners=False).squeeze(0).squeeze(0).squeeze(0)
         return F.linear(x, torch.cat((fixed_weights, dynamic_weights), dim=1), this_bias)
 def to_2tuple(x):
+    from itertools import repeat
     if isinstance(x, collections.abc.Iterable) and not isinstance(x, str):
         return tuple(x)
     return tuple(repeat(x, 2))
-
-class DynamicLinearMlp(nn.Module):
-    def __init__(
-            self,
-            in_features,
-            hidden_features=None,
-            out_features=None,
-            act_layer=nn.GELU,
-            norm_layer=None,
-            bias=True,
-            drop=0.,
-            prefix_token_length=None,
-            group=1,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        bias = to_2tuple(bias)
-        drop_probs = to_2tuple(drop)
-
-        self.fc1 = nn.Conv1d(in_features, hidden_features,
-                             3, groups=group, bias=bias[0], padding=1)
-        self.act = act_layer()
-        self.drop1 = nn.Dropout(drop_probs[0])
-
-        self.norm = norm_layer(
-            hidden_features) if norm_layer is not None else nn.Identity()
-        self.seq_fc = DynamicLinear(
-            hidden_features//4, hidden_features//4, bias=bias[1], fixed_in=prefix_token_length)
-        self.prompt_fc = DynamicLinear(
-            hidden_features//4, prefix_token_length, bias=bias[1], fixed_in=prefix_token_length)
-
-        self.fc2 = nn.Linear(hidden_features, out_features, bias=bias[1])
-        self.drop2 = nn.Dropout(drop_probs[1])
-        self.hidden_features = hidden_features
-        self.prefix_token_length = prefix_token_length
-
-    def dynamic_linear(self, x, prefix_seq_len):
-        x_func = x[:, :, prefix_seq_len:]
-        x_seq = x[:, :, :prefix_seq_len]
-        x_seq_out = self.seq_fc(
-            x_seq, x_seq.shape[-1]-self.prefix_token_length)
-        x_prompt = self.prompt_fc(x_seq, self.prefix_token_length)
-        x = torch.cat((x_prompt, x_seq_out, x_func), dim=-1)
-        return x
-
-    def split_dynamic_linear(self, x, prefix_seq_len):
-        x1, x2 = x.chunk(2, dim=-2)
-        x1 = self.dynamic_linear(x1, prefix_seq_len)
-        return torch.cat((x1, x2), dim=-2)
-
-    def forward(self, x, prefix_seq_len, dim=2):
-        n, var, l, c = x.shape
-        x = x.view(-1, l, c)
-        x = x.transpose(-1, -2)
-        x = self.fc1(x)
-        x = self.split_dynamic_linear(x, prefix_seq_len)
-        x = self.act(x)
-        x = self.drop1(x)
-        x = x.transpose(1, 2)
-        x = self.norm(x)
-        x = self.fc2(x).view(n, var, l, c)
-        x = self.drop2(x)
-        return x
 
 
 class GateLayer(nn.Module):
@@ -301,21 +235,21 @@ class MLPBlock(nn.Module):
     ):
         super().__init__()
         self.norm2 = norm_layer(dim)
-        if mlp_layer is DynamicLinearMlp:
-            self.mlp = mlp_layer(
-                in_features=dim,
-                hidden_features=int(dim * mlp_ratio),
-                act_layer=act_layer,
-                drop=proj_drop,
-                prefix_token_length=prefix_token_length,
-            )
-        else:
-            self.mlp = mlp_layer(
-                in_features=dim,
-                hidden_features=int(dim * mlp_ratio),
-                act_layer=act_layer,
-                drop=proj_drop,
-            )
+        # if mlp_layer is DynamicLinearMlp:
+        #     self.mlp = mlp_layer(
+        #         in_features=dim,
+        #         hidden_features=int(dim * mlp_ratio),
+        #         act_layer=act_layer,
+        #         drop=proj_drop,
+        #         prefix_token_length=prefix_token_length,
+        #     )
+        # else:
+        self.mlp = mlp_layer(
+            in_features=dim,
+            hidden_features=int(dim * mlp_ratio),
+            act_layer=act_layer,
+            drop=proj_drop,
+        )
         self.ls2 = GateLayer(dim, init_values=init_values)
         self.drop_path2 = DropPath(
             drop_path) if drop_path > 0. else nn.Identity()
@@ -329,6 +263,43 @@ class MLPBlock(nn.Module):
             x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
         return x
 
+
+class Mlp(nn.Module):
+    """ MLP as used in Vision Transformer, MLP-Mixer and related networks
+    """
+    def __init__(
+            self,
+            in_features,
+            hidden_features=None,
+            out_features=None,
+            act_layer=nn.GELU,
+            norm_layer=None,
+            bias=True,
+            drop=0.,
+            use_conv=False,
+    ):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        bias = to_2tuple(bias)
+        drop_probs = to_2tuple(drop)
+        linear_layer = partial(nn.Conv2d, kernel_size=1) if use_conv else nn.Linear
+
+        self.fc1 = linear_layer(in_features, hidden_features, bias=bias[0])
+        self.act = act_layer()
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.norm = norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
+        self.fc2 = linear_layer(hidden_features, out_features, bias=bias[1])
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop1(x)
+        x = self.norm(x)
+        x = self.fc2(x)
+        x = self.drop2(x)
+        return x
 
 #%% head
 
@@ -508,28 +479,6 @@ class AFNO1D(nn.Module):
         return x
 
 
-
-
-
-
-class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act='gelu', drop=0.):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = ACTIVATION[act]
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        # self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.fc2(x)
-        return x
-
-
-
 class Block(nn.Module):
     def __init__(self, mixing_type='afno',
                  double_skip=True,
@@ -576,7 +525,7 @@ class Block(nn.Module):
         )
         # self.dynamic_mlp = DynamicLinear(
         #     in_features=128, out_features=128, fixed_in=prefix_token_length)
-        self.dynamic_mlp = MLPBlock(dim=dim, mlp_ratio=mlp_ratio, mlp_layer=DynamicLinearMlp)
+        # self.dynamic_mlp = MLPBlock(dim=dim, mlp_ratio=mlp_ratio, mlp_layer=DynamicLinearMlp)
         
         
     def forward(self, x, prefix_seq_len, attn_mask):
@@ -613,12 +562,3 @@ class Block(nn.Module):
                     p[1].requires_grad) + ')\n'
 
         return string_repr
-
-
-if __name__ == "__main__":
-    # x = torch.rand(4, 20, 20, 100)
-    # net = AFNO2D(in_timesteps=3, out_timesteps=1, n_channels=2, width=100, num_blocks=5)
-    x = torch.rand(4, 20, 20, 6, 3)
-    net = DPOTNet(img_size=20, patch_size=5, in_channels=3, out_channels=3, in_timesteps=6, out_timesteps=1, embed_dim=32,normalize=True)
-    y,_ = net(x)
-    print(y.shape)

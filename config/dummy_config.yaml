@@ -2,11 +2,12 @@
 
 
 # 1 task
-
+itr: 1
 
 # 2 exp 
 ## 2.1 setting
-
+is_training: 1
+acc_it: 1
 exp_num: 1
 device: cuda
 seed: 17
@@ -14,9 +15,11 @@ name: "dummy_exp"
 gpus: 1
 debug: True
 
+
 ## 2.2 dirs
 
 save_dir: ./save
+checkpoints: ./checkpoints/
 
 ## 2.3 hyperparameters
 
@@ -25,16 +28,31 @@ batch_size: 64
 num_epochs: 300
 weight_decay: 0.0001
 
+## 2.4 training
+
+mask_rate: 0.25
+train_epochs: 10
+warmup_epochs: 0
+weight_decay: 0.0001
 
 
-# 3 data
+# 3 data_task
 
+## data
 num_works: 32
-
+## task 
+task_name: ALL_task
 # 4 model
 
-## 4.1 
+## 4.1 model_setting
 
+d_model: 512
+dropout: 0.1
+e_layers: 2
+large_model: true
+patch_len: 64
+stride: 64
+prompt_num: 5
 
 # 5 wandb
 wandb_flag: True

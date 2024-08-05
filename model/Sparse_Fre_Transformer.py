@@ -22,14 +22,14 @@ class Model(nn.Module):
     def __init__(self, args, task_data_config_list):
         super(Model, self).__init__()
         self.args = args
-        self.config_list = task_data_config_list
+        self.configs_list = task_data_config_list
         self.num_task = len(task_data_config_list)
         self._init_tokens()
         self._init_cls_num()
         self._init_num()
         self._init_blocks()
         self._init_task_submodel()
-        self._init_prompt_handler()
+        # self._init_prompt_handler()
         
         
     def _init_tokens(self):
@@ -55,7 +55,7 @@ class Model(nn.Module):
                     1, self.configs_list[i][1]['enc_in'], 1, self.args.d_model) * 0.02
         
     def _init_cls_num(self):
-        self.cls_num = {}
+        self.cls_nums = {}
         for i in range(self.num_task):
             task_data_name = self.configs_list[i][0]
             task_config = self.configs_list[i][1]
@@ -98,11 +98,24 @@ class Model(nn.Module):
 
         # basic blocks
         self.block_num = self.args.e_layers
-        self.blocks = nn.ModuleList(
-            [BasicBlock(dim=self.args.d_model, num_heads=self.args.n_heads, qkv_bias=False, qk_norm=False,
-                        mlp_ratio=8., proj_drop=self.args.dropout, attn_drop=0., drop_path=0.,
-                        init_values=None, prefix_token_length=self.args.prompt_num) for l in range(self.args.e_layers)]
-        )       
+        # self.blocks = nn.ModuleList(
+        #     [Block(dim=self.args.d_model, num_heads=self.args.n_heads, qkv_bias=False, qk_norm=False,
+        #                 mlp_ratio=8., proj_drop=self.args.dropout, attn_drop=0., drop_path=0.,
+        #                 init_values=None, prefix_token_length=self.args.prompt_num) for l in range(self.args.e_layers)]
+        # )       
+        
+        self.blocks = nn.ModuleList([
+            Block(    mixing_type='afno', 
+                  double_skip=True, 
+                  width=32, 
+                  n_blocks=4, 
+                  mlp_ratio=1., 
+                  channel_first=True, 
+                  modes=32, 
+                  act='gelu',
+                  )
+            for i in range(args.e_layers)])
+        
         self.cls_head = CLSHead(args.d_model, head_dropout=args.dropout)
         self.forecast_head = ForecastHead(
             args.d_model, args.patch_len, args.stride, args.stride, prefix_token_length=args.prompt_num, head_dropout=args.dropout)    
@@ -115,12 +128,13 @@ class Model(nn.Module):
         # 计算标准差
         if mask is not None:
             x = x.masked_fill(mask == 0, 0)
-            valid_elements = torch.sum(mask == 1, dim=1)
-            stdev = torch.sqrt(torch.sum(x * x, dim=1) / valid_elements + 1e-5)
+            stdev = torch.sqrt(torch.sum(x * x, dim=1) /
+                               torch.sum(mask == 1, dim=1) + 1e-5)
+            stdev = stdev.unsqueeze(dim=1)
         else:
             stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5)
         
-        stdev = stdev.unsqueeze(dim=1)
+        # stdev = stdev.unsqueeze(dim=1)
         x /= stdev
 
         # 重新排列维度
@@ -158,7 +172,7 @@ class Model(nn.Module):
         category_token = self.category_tokens[task_data_name]
 
         # 对输入数据进行标记化处理
-        x, means, stdev, n_vars, _ = self.tokenize(x)
+        x, means, stdev, n_vars, _ = self.tokenize(x) # B,L,C 
 
         # 获取序列长度
         seq_len = x.shape[-2]
@@ -279,72 +293,108 @@ class Model(nn.Module):
 
         return x
     
-    def _init_prompt_handler(self):
-        def add_position_embedding(x):
-            return x + self.position_embedding(x)
+    # def _init_prompt_handler(self):
+    #     def add_position_embedding(x):
+    #         return x + self.position_embedding(x)
 
-        def add_prompt_tokens(x, prompt, dim=-2):
-            return torch.cat((prompt, x), dim=dim)
+    #     def add_prompt_tokens(x, prompt, dim=-2):
+    #         return torch.cat((prompt, x), dim=dim)
 
-        def handle_forecast(x, this_prompt, task_prompt, task_prompt_num):
-            this_mask_prompt = task_prompt.repeat(x.shape[0], 1, task_prompt_num, 1)
-            init_full_input = add_prompt_tokens(x, this_prompt)
-            init_full_input = add_prompt_tokens(init_full_input, this_mask_prompt)
-            init_mask_prompt = self.prompt2forecat(init_full_input.transpose(-1, -2), init_full_input.shape[2] - this_prompt.shape[2]).transpose(-1, -2)
-            this_function_prompt = init_mask_prompt[:, :, -task_prompt_num:]
-            x = add_prompt_tokens(x, this_prompt)
-            x = add_prompt_tokens(x, this_function_prompt)
-            x[:, :, self.prompt_num:] = add_position_embedding(x[:, :, self.prompt_num:])
-            return x
+    #     def handle_forecast(x, this_prompt, task_prompt, task_prompt_num):
+    #         this_mask_prompt = task_prompt.repeat(x.shape[0], 1, task_prompt_num, 1)
+    #         init_full_input = add_prompt_tokens(x, this_prompt)
+    #         init_full_input = add_prompt_tokens(init_full_input, this_mask_prompt)
+    #         init_mask_prompt = self.prompt2forecat(init_full_input.transpose(-1, -2), init_full_input.shape[2] - this_prompt.shape[2]).transpose(-1, -2)
+    #         this_function_prompt = init_mask_prompt[:, :, -task_prompt_num:]
+    #         x = add_prompt_tokens(x, this_prompt)
+    #         x = add_prompt_tokens(x, this_function_prompt)
+    #         x[:, :, self.prompt_num:] = add_position_embedding(x[:, :, self.prompt_num:])
+    #         return x
 
-        def handle_classification(x, this_prompt, task_prompt):
-            this_function_prompt = task_prompt.repeat(x.shape[0], 1, 1, 1)
-            x = add_position_embedding(x)
-            x = add_prompt_tokens(x, this_prompt)
-            x = add_prompt_tokens(x, this_function_prompt)
-            return x
+    #     def handle_classification(x, this_prompt, task_prompt):
+    #         this_function_prompt = task_prompt.repeat(x.shape[0], 1, 1, 1)
+    #         x = add_position_embedding(x)
+    #         x = add_prompt_tokens(x, this_prompt)
+    #         x = add_prompt_tokens(x, this_function_prompt)
+    #         return x
 
-        def handle_imputation(x, this_prompt, task_prompt, mask):
-            mask = 1 - mask
-            mask = mask.permute(0, 2, 1)
-            mask = self.mark2token(mask)
-            mask_repeat = mask.unsqueeze(dim=-1).repeat(1, 1, 1, x.shape[-1])
-            mask_token = task_prompt
-            x = x * (1 - mask_repeat) + mask_token * mask_repeat
-            init_full_input = add_prompt_tokens(x, this_prompt)
-            init_mask_prompt = self.prompt2forecat(init_full_input.transpose(-1, -2), x.shape[2]).transpose(-1, -2)
-            x = x * (1 - mask_repeat) + init_mask_prompt * mask_repeat
-            x = add_position_embedding(x)
-            x = add_prompt_tokens(x, this_prompt)
-            return x
+    #     def handle_imputation(x, this_prompt, task_prompt, mask):
+    #         mask = 1 - mask
+    #         mask = mask.permute(0, 2, 1)
+    #         mask = self.mark2token(mask)
+    #         mask_repeat = mask.unsqueeze(dim=-1).repeat(1, 1, 1, x.shape[-1])
+    #         mask_token = task_prompt
+    #         x = x * (1 - mask_repeat) + mask_token * mask_repeat
+    #         init_full_input = add_prompt_tokens(x, this_prompt)
+    #         init_mask_prompt = self.prompt2forecat(init_full_input.transpose(-1, -2), x.shape[2]).transpose(-1, -2)
+    #         x = x * (1 - mask_repeat) + init_mask_prompt * mask_repeat
+    #         x = add_position_embedding(x)
+    #         x = add_prompt_tokens(x, this_prompt)
+    #         return x
 
-        def handle_anomaly_detection(x, this_prompt):
-            x = add_position_embedding(x)
-            x = add_prompt_tokens(x, this_prompt)
-            return x
+    #     def handle_anomaly_detection(x, this_prompt):
+    #         x = add_position_embedding(x)
+    #         x = add_prompt_tokens(x, this_prompt)
+    #         return x
             
-        self.task_handlers = {
-        'forecast': handle_forecast,
-        'classification': handle_classification,
-        'imputation': handle_imputation,
-        'anomaly_detection': handle_anomaly_detection
-    }
-    
-    def prepare_prompt(self, x, n_vars, prefix_prompt,
-                       task_prompt, task_prompt_num,
-                       task_name=None, mask=None):
+    #     self.task_handlers = {
+    #     'forecast': handle_forecast,
+    #     'classification': handle_classification,
+    #     'imputation': handle_imputation,
+    #     'anomaly_detection': handle_anomaly_detection
+    # }
 
-        x = torch.reshape(x, (-1, n_vars, x.shape[-2], x.shape[-1]))
+    # def handle_task(self, task_type, **kwargs):
+    #     if task_type in self.task_handlers:
+    #         return self.task_handlers[task_type](**kwargs)
+    #     else:
+    #         raise ValueError(f"Unknown task type: {task_type}")
+        
+    def prepare_prompt(self, x, n_vars, prefix_prompt, task_prompt, task_prompt_num, task_name=None, mask=None):
+        x = torch.reshape(
+            x, (-1, n_vars, x.shape[-2], x.shape[-1]))
+        # append prompt tokens
         this_prompt = prefix_prompt.repeat(x.shape[0], 1, 1, 1)
 
-        if task_name in self.task_handlers:
-            x = self.task_handlers[task_name](x,
-                                              this_prompt,
-                                              task_prompt,
-                                              task_prompt_num,
-                                              mask)
+        if task_name == 'forecast':
+            this_mask_prompt = task_prompt.repeat(
+                x.shape[0], 1, task_prompt_num, 1)
+            init_full_input = torch.cat(
+                (this_prompt, x, this_mask_prompt), dim=-2)
+            init_mask_prompt = self.prompt2forecat(init_full_input.transpose(
+                -1, -2), init_full_input.shape[2]-prefix_prompt.shape[2]).transpose(-1, -2)
+            this_function_prompt = init_mask_prompt[:, :, -task_prompt_num:]
+            x = torch.cat((this_prompt, x, this_function_prompt), dim=2)
+            x[:, :, self.prompt_num:] = x[:, :, self.prompt_num:] + \
+                self.position_embedding(x[:, :, self.prompt_num:])
+        elif task_name == 'classification':
+            this_function_prompt = task_prompt.repeat(x.shape[0], 1, 1, 1)
+            x = x + self.position_embedding(x)
+            x = torch.cat((this_prompt, x, this_function_prompt), dim=2) # B,C,PROMPT.D  concate x  concate B,C,1,D 
+        elif task_name == 'imputation':
+            # fill the masked parts with mask tokens
+            # for imputation, masked is 0, unmasked is 1, so here to reverse mask
+            mask = 1-mask
+            mask = mask.permute(0, 2, 1)
+            mask = self.mark2token(mask)
+            mask_repeat = mask.unsqueeze(dim=-1)
 
-        return x        
+            mask_token = task_prompt
+            mask_repeat = mask_repeat.repeat(1, 1, 1, x.shape[-1])
+            x = x * (1-mask_repeat) + mask_token * mask_repeat
+
+            init_full_input = torch.cat((this_prompt, x), dim=-2)
+            init_mask_prompt = self.prompt2forecat(
+                init_full_input.transpose(-1, -2), x.shape[2]).transpose(-1, -2)
+            # keep the unmasked tokens and fill the masked ones with init_mask_prompt.
+            x = x * (1-mask_repeat) + init_mask_prompt * mask_repeat
+            x = x + self.position_embedding(x)
+            x = torch.cat((this_prompt, x), dim=2)
+        elif task_name == 'anomaly_detection':
+            x = x + self.position_embedding(x)
+            x = torch.cat((this_prompt, x), dim=2)
+
+        return x   
     
     def backbone(self, x, prefix_len, seq_len):
         attn_mask = None

@@ -1,7 +1,7 @@
 import argparse
 import torch
 from utils.config_utils import parse_arguments
-from trainer import Exp
+from trainer.exp import Exp
 from trainer.trainer_config import get_trainer
 
 from data.data_loader_provider import get_data
@@ -9,9 +9,9 @@ from data.data_loader_provider import get_data
 parser = argparse.ArgumentParser(description='TSPN')
 
 # 添加参数
-parser.add_argument('--trainer_config_dir', type=str, default='configs/config_basic.yaml',
+parser.add_argument('--trainer_config_dir', type=str, default='config/dummy_config.yaml',
                     help='The directory of the configuration file of trainer')
-parser.add_argument('--task_data_config_dir', type=str, default='configs/config_basic.yaml',
+parser.add_argument('--task_data_config_dir', type=str, default='data/task_data_yaml/multi_task.yaml',
                     help='The directory of the configuration file of task data')
 parser.add_argument('--check_point_dir', type=str, default='False',
                     help='set check_point if you have checkpoint to continue training')   
