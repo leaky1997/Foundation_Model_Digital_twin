@@ -191,6 +191,11 @@ class Exp(pl.LightningModule):
             loss = criterion(outputs, batch_x)
 
         return loss
+
+    
+    def testing_step(self, batch, batch_idx):
+        
+
     
     
     def configure_optimizers(self): # 'ReduceLROnPlateau'
