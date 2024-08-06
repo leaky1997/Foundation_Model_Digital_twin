@@ -124,8 +124,7 @@ class AnomalyDetectionDataset(BaseDataset):
         super().__init__(args, flag, task_type='anomaly_detection')
 
     def construct_sample_and_label(self, idx):
-        sample = self.selected_data[idx]
-        label = self.selected_labels[idx]
+        pass
         # 异常检测任务的特定处理
         return sample, label
 
@@ -137,7 +136,7 @@ class ImputationDataset(BaseDataset):
         sample = self.selected_data[idx]
         label = self.selected_labels[idx]
         # 插补任务的特定处理
-        return sample, label
+        return sample, sample
 
 class ForecastingDataset(BaseDataset):
     def __init__(self, args, flag):
@@ -148,6 +147,9 @@ class ForecastingDataset(BaseDataset):
         label = self.selected_labels[idx]
         # 预测任务的特定处理
         return sample, label
+
+
+class THU_006_classification(ClassificationDataset) # dataset_task
 
 
 
