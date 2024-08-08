@@ -6,7 +6,7 @@ from pytorch_lightning import seed_everything
 
 from utils.dataset_utils import read_task_data_config, get_task_data_config_list
 from utils.exp_utils import custom_print_decorator,\
-    scheduler,get_loss_by_name,apply_random_mask_for_imputation
+    scheduler_dict,get_loss_by_name,apply_random_mask_for_imputation
 from torch import optim
 
 print = custom_print_decorator(print)
@@ -17,20 +17,22 @@ class Exp(pl.LightningModule):
         super(Exp, self).__init__()
         self.args = args
         seed_everything(args.seed)
+        self.path = self.args.path
         
         args_dict = vars(args)
         self.save_hyperparameters(args_dict)
         
         self.task_data_config = read_task_data_config(self.args.task_data_config_path)
         self.task_data_config_list= get_task_data_config_list(
-            self.ori_task_data_config, default_batch_size=self.args.batch_size)
+            self.task_data_config, default_batch_size=self.args.batch_size)
         
         self.model = self.init_model(args.model)
 
         self.criterion_list = self.init_loss(self.task_data_config_list) # TODO check
-
+        self.init_task_to_method()
+        
     def init_model(self, model):
-        module = importlib.import_module("models."+self.args.model) # 
+        module = importlib.import_module("model."+self.args.model) # 
         model = module.Model(
                     self.args, self.task_data_config_list)     
         return model    
@@ -42,13 +44,13 @@ class Exp(pl.LightningModule):
             if 'loss' in each_config[1]:
                 loss_name = each_config[1]['loss']
             else:
-                if each_config[1]['task_name'] == 'long_term_forecast':
+                if each_config[1]['task_name'] == 'Forecasting':
                     loss_name = 'MSE'
-                elif each_config[1]['task_name'] == 'classification':
+                elif each_config[1]['task_name'] == 'Classification':
                     loss_name = 'CE'
-                elif each_config[1]['task_name'] == 'imputation':
+                elif each_config[1]['task_name'] == 'Imputation':
                     loss_name = 'MSE'
-                elif each_config[1]['task_name'] == 'anomaly_detection':
+                elif each_config[1]['task_name'] == 'Anomaly_detection':
                     loss_name = 'MSE'
                 else:
                     print("this task has no loss now!", folder=self.path)
@@ -84,10 +86,10 @@ class Exp(pl.LightningModule):
     def init_task_to_method(self):
         
         self.task_to_method = {
-        'long_term_forecast': self.train_long_term_forecast,
-        'classification': self.train_classification,
-        'imputation': self.train_imputation,
-        'anomaly_detection': self.train_anomaly_detection}
+        'Forecasting': self.train_long_term_forecast,
+        'Classification': self.train_classification,
+        'Imputation': self.train_imputation,
+        'Anomaly_detection': self.train_anomaly_detection}
 
     def forward(self, x):
         return self.model(x)
@@ -105,6 +107,38 @@ class Exp(pl.LightningModule):
                 self.task_data_config_list[task_id][1],
                 task_id)
             self.log(f'train_{task_name}_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True,sync_dist=True)
+        else:
+            raise ValueError(f"Unknown task name: {task_name}")
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        sample,task_id = batch
+        
+        task_name = self.task_data_config_list[task_id][1]['task_name']
+        if task_name in self.task_to_method:
+            loss = self.task_to_method[task_name](
+                self.model,
+                sample,
+                self.criterion_list[task_id],
+                self.task_data_config_list[task_id][1],
+                task_id)
+            self.log(f'val_{task_name}_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True,sync_dist=True)
+        else:
+            raise ValueError(f"Unknown task name: {task_name}")
+        return loss
+    
+    def test_step(self, batch, batch_idx):
+        sample,task_id = batch
+        
+        task_name = self.task_data_config_list[task_id][1]['task_name']
+        if task_name in self.task_to_method:
+            loss = self.task_to_method[task_name](
+                self.model,
+                sample,
+                self.criterion_list[task_id],
+                self.task_data_config_list[task_id][1],
+                task_id)
+            self.log(f'test_{task_name}_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True,sync_dist=True)
         else:
             raise ValueError(f"Unknown task name: {task_name}")
         return loss
@@ -139,14 +173,13 @@ class Exp(pl.LightningModule):
     def train_classification(self, model, this_batch, criterion, config, task_id):
         task_name = config['task_name']
 
-        batch_x, label, padding_mask = this_batch
+        batch_x, label = this_batch
 
         batch_x = batch_x.float().to(self.device_id)
         padding_mask = padding_mask.float().to(self.device_id)
         label = label.to(self.device_id)
         with torch.cuda.amp.autocast():
-            outputs = model(batch_x, padding_mask, None,
-                            None, task_id=task_id, task_name=task_name)
+            outputs = model(batch_x,  task_id=task_id, task_name=task_name)
             if outputs.shape[0] == label.shape[0]:
                 loss = criterion(outputs, label.long().squeeze(-1)) # CE B,C VS B,1
             else:
@@ -157,7 +190,7 @@ class Exp(pl.LightningModule):
 
     def train_imputation(self, model, this_batch, criterion, config, task_id):
         task_name = config['task_name']
-        features = config['features']
+        # features = config['features']
 
         batch_x, _, _, _ = this_batch
         batch_x = batch_x.float().to(self.device_id)
@@ -169,15 +202,15 @@ class Exp(pl.LightningModule):
         with torch.cuda.amp.autocast():
             outputs = model(inp, None, None,
                             None, task_id=task_id, mask=mask, task_name=task_name)
-        f_dim = -1 if features == 'MS' else 0
-        outputs = outputs[:, :, f_dim:]
+        # f_dim = -1 if features == 'MS' else 0
+        # outputs = outputs[:, :, f_dim:]
         loss = criterion(outputs[mask == 0], batch_x[mask == 0])
 
         return loss
 
     def train_anomaly_detection(self, model, this_batch, criterion, config, task_id): # TODO
         task_name = config['task_name']
-        features = config['features']
+        # features = config['features']
 
         batch_x, _ = this_batch
 
@@ -186,14 +219,14 @@ class Exp(pl.LightningModule):
         with torch.cuda.amp.autocast():
             outputs = model(batch_x, None, None,
                             None, task_id=task_id, task_name=task_name)
-            f_dim = -1 if features == 'MS' else 0
-            outputs = outputs[:, :, f_dim:]
+            # f_dim = -1 if features == 'MS' else 0
+            # outputs = outputs[:, :, f_dim:]
             loss = criterion(outputs, batch_x)
 
         return loss
 
     
-    def testing_step(self, batch, batch_idx):
+    # def testing_step(self, batch, batch_idx):
         
 
     
@@ -203,7 +236,7 @@ class Exp(pl.LightningModule):
         optimizer = optim.Adam(self.model.parameters(),
                          lr=self.args.learning_rate,
                          weight_decay=self.args.weight_decay)
-        scheduler = scheduler[self.args.scheduler]
+        scheduler = scheduler_dict[self.args.scheduler]
         out = {
             "optimizer": optimizer,
             "lr_scheduler": {

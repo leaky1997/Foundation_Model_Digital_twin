@@ -5,12 +5,23 @@ from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning import Trainer    #  lighting.pytorch? check if bug
 from pytorch_lightning.loggers import WandbLogger
 import pytorch_lightning as pl
-
-def get_trainer(args,path):
-
+import wandb
+def get_trainer(args):
+    path = args.path
+    
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project=args.name,
+        # track hyperparameters and run metadata
+        config=args,
+        mode=args.run_mode,
+        # dryrun=True
+    )
+    
+    
     callback_list = call_backs(args,path)
     log_list = [CSVLogger(path, name="logs"),
-                WandbLogger(project=args.dataset_task)] if args.wandb_flag else [CSVLogger(path, name="logs")]
+                WandbLogger(project=args.name)] if args.wandb_flag else [CSVLogger(path, name="logs")]
 
     trainer = pl.Trainer(callbacks=callback_list,
                         max_epochs=args.num_epochs,
@@ -18,6 +29,7 @@ def get_trainer(args,path):
                         logger = log_list,
                         log_every_n_steps=1,
                         precision=16,)
+    return trainer
 
 def call_backs(args,path):
     checkpoint_callback = ModelCheckpoint(

@@ -15,7 +15,47 @@ from model.Blocks import Block,CLSHead,PatchEmbedding,\
     ForecastHead,LearnablePositionalEmbedding
 
 
+class DynamicLinear(nn.Module):
+    """
+    A dynamic linear layer that can interpolate the weight size to support any given input and output feature dimension.
+    """
 
+    def __init__(self, in_features=None, out_features=None, fixed_in=0, bias=True):
+        super(DynamicLinear, self).__init__()
+        assert fixed_in < in_features, "fixed_in < in_features is required !!!"
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weights = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.bias = nn.Parameter(torch.Tensor(out_features))
+        self.fixed_in = fixed_in
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.weights, a=math.sqrt(5))
+        fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weights)
+        bound = 1 / math.sqrt(fan_in)
+        nn.init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, x, out_features):
+        """
+        Forward pass for the dynamic linear layer.
+        """
+        fixed_weights = self.weights[:, :self.fixed_in]
+        dynamic_weights = self.weights[:, self.fixed_in:]
+        this_bias = self.bias
+        in_features = x.shape[-1]
+
+        if in_features != self.weights.size(1) or out_features != self.weights.size(0):
+            dynamic_weights = F.interpolate(dynamic_weights.unsqueeze(0).unsqueeze(0), size=(
+                out_features, in_features-self.fixed_in), mode='bilinear', align_corners=False).squeeze(0).squeeze(0)
+            if self.fixed_in != 0:
+                fixed_weights = F.interpolate(fixed_weights.unsqueeze(0).unsqueeze(0), size=(
+                    out_features, self.fixed_in), mode='bilinear', align_corners=False).squeeze(0).squeeze(0)
+        if out_features != self.weights.size(0):
+            this_bias = F.interpolate(this_bias.unsqueeze(0).unsqueeze(0).unsqueeze(0), size=(
+                1, out_features), mode='bilinear', align_corners=False).squeeze(0).squeeze(0).squeeze(0)
+        return F.linear(x, torch.cat((fixed_weights, dynamic_weights), dim=1), this_bias)
 
 
 class Model(nn.Module):
@@ -39,7 +79,7 @@ class Model(nn.Module):
         self.category_tokens = nn.ParameterDict({})
         
         for i in range(self.num_task):
-            dataset_name = self.configs_list[i][1]['dataset']
+            dataset_name = self.configs_list[i][1]['dataset_name']
             task_data_name = self.configs_list[i][0]
             if dataset_name not in self.prompt_tokens:
                 self.prompt_tokens[dataset_name] = torch.randn(1, self.configs_list[i][1]['enc_in'], # prompt
@@ -94,7 +134,7 @@ class Model(nn.Module):
             self.args.stride,
             self.args.dropout)
         self.position_embedding = LearnablePositionalEmbedding(self.args.d_model)
-        # self.prompt2forecat = DynamicLinear(128, 128, fixed_in=self.args.prompt_num)
+        self.prompt2forecat = DynamicLinear(128, 128, fixed_in=self.args.prompt_num)
 
         # basic blocks
         self.block_num = self.args.e_layers
@@ -160,7 +200,7 @@ class Model(nn.Module):
             'anomaly_detection': self.anomaly_detection
         }
     
-    def classification(self, x, x_mark, task_id):
+    def classification(self, x, task_id):
         # 获取数据集名称和任务数据名称
         dataset_name = self.configs_list[task_id][1]['dataset']
         task_data_name = self.configs_list[task_id][0]
@@ -190,7 +230,7 @@ class Model(nn.Module):
 
         return x
     
-    def imputation(self, x, x_mark, mask, task_id):
+    def imputation(self, x mask, task_id):
         # 获取数据集名称
         dataset_name = self.configs_list[task_id][1]['dataset']
 
@@ -225,7 +265,7 @@ class Model(nn.Module):
 
         return x
 
-    def forecast(self, x, x_mark, task_id):
+    def forecast(self, x, task_id):
         # 获取数据集名称和任务数据名称
         dataset_name = self.configs_list[task_id][1]['dataset']
         task_data_name = self.configs_list[task_id][0]
@@ -262,7 +302,7 @@ class Model(nn.Module):
 
         return x
 
-    def anomaly_detection(self, x, x_mark, task_id):
+    def anomaly_detection(self, x, task_id):
         # 获取数据集名称
         dataset_name = self.configs_list[task_id][1]['dataset']
         prefix_prompt = self.prompt_tokens[dataset_name]
@@ -516,11 +556,12 @@ if __name__ == '__main__':
     model = Model(args, configs_list)
 
     # 创建输入数据
-    B, L, C = 2, 4096, 7
+    B, L, C = 2, 2048, 111
     x_enc = torch.randn(B, L, C)
     x_mark_enc = torch.randn(B, L, C)
     # 假设任务名称为 'long_term_forecast'
-    task_name = 'classification'
-    task_id = 2  # 假设任务ID为0
+    task_name = 'long_term_forecast' # long_term_forecast classification
+    task_id = 0  # 假设任务ID为0
 
     output = model.forward(x_enc, x_mark_enc, task_id=task_id, task_name=task_name)
+    print(output.shape)  # torch.Size([2, 1]

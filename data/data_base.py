@@ -10,36 +10,35 @@ from torch.utils.data import Dataset
 import os
 
 class BaseDataset(Dataset):
-    def __init__(self, args, flag, task_type):
+    def __init__(self, args, flag):
         self.flag = flag
         self.args = args
-        self.task_type = task_type
         self.data = []
         self.labels = []
         self.has_labels = True
         
-        if isinstance(args.data_dict, dict):
-            self.load_data(args.data_dict)
-        else:
-            self.load_data_from_directory(args.data_dir)
+        # if isinstance(args.data_dict, dict):
+        #     self.load_data(args.data_dict)
+        # else:
+        self.load_data_from_directory(args.data_dir)
 
         self.create_splits()
         self.select_data_based_on_flag()
 
-    def load_data(self, data_dict):
-        for name, file_path in data_dict.items():
-            if 'data' in name:
-                self.data.append(np.load(file_path).astype(np.float32))
-            elif 'label' in name:
-                self.labels.append(np.load(file_path).astype(np.float32))
+    # def load_data(self, data_dict):
+    #     for name, file_path in data_dict.items():
+    #         if 'data' in name:
+    #             self.data.append(np.load(file_path).astype(np.float32))
+    #         elif 'label' in name:
+    #             self.labels.append(np.load(file_path).astype(np.float32))
 
-        self.data = np.concatenate(self.data, axis=0)
+    #     self.data = np.concatenate(self.data, axis=0)
         
-        if self.labels:
-            self.labels = np.concatenate(self.labels, axis=0)
-        else:
-            self.has_labels = False
-            self.labels = np.zeros(len(self.data))  # 如果没有标签文件，生成一个全零的标签
+    #     if self.labels:
+    #         self.labels = np.concatenate(self.labels, axis=0)
+    #     else:
+    #         self.has_labels = False
+    #         self.labels = np.zeros(len(self.data))  # 如果没有标签文件，生成一个全零的标签
 
     def load_data_from_directory(self, directory):
         data_files = []
@@ -49,6 +48,7 @@ class BaseDataset(Dataset):
             for file in files:
                 if file.endswith(".npy"):
                     if 'data' in file:
+
                         data_files.append(os.path.join(root, file))
                     elif 'label' in file:
                         label_files.append(os.path.join(root, file))
@@ -111,7 +111,7 @@ class BaseDataset(Dataset):
 
 class ClassificationDataset(BaseDataset):
     def __init__(self, args, flag):
-        super().__init__(args, flag, task_type='classification')
+        super().__init__(args, flag)
 
     def construct_sample_and_label(self, idx):
         sample = self.selected_data[idx]
@@ -121,26 +121,26 @@ class ClassificationDataset(BaseDataset):
 
 class AnomalyDetectionDataset(BaseDataset):
     def __init__(self, args, flag):
-        super().__init__(args, flag, task_type='anomaly_detection')
+        super().__init__(args, flag)
 
     def construct_sample_and_label(self, idx):
         pass
         # 异常检测任务的特定处理
-        return sample, label
+        # return sample, label
 
 class ImputationDataset(BaseDataset):
     def __init__(self, args, flag):
-        super().__init__(args, flag, task_type='imputation')
+        super().__init__(args, flag)
 
     def construct_sample_and_label(self, idx):
         sample = self.selected_data[idx]
         label = self.selected_labels[idx]
         # 插补任务的特定处理
-        return sample, sample
+        return sample, label
 
 class ForecastingDataset(BaseDataset):
     def __init__(self, args, flag):
-        super().__init__(args, flag, task_type='forecasting')
+        super().__init__(args, flag)
 
     def construct_sample_and_label(self, idx):
         sample = self.selected_data[idx]
@@ -149,7 +149,6 @@ class ForecastingDataset(BaseDataset):
         return sample, label
 
 
-class THU_006_classification(ClassificationDataset) # dataset_task
 
 
 

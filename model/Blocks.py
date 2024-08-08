@@ -334,7 +334,7 @@ class CLSHead(nn.Module):
         return distance
 
 
-class ForecastHead(nn.Module):
+class ForecastHead(nn.Module): # TODO
     def __init__(self, d_model, patch_len, stride, pad, head_dropout=0, prefix_token_length=None):
         super().__init__()
         d_mid = d_model

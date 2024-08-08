@@ -1,10 +1,11 @@
 import numpy as np
 import torch
+import torch as t
 import torch.nn.functional as F
 import torch.nn as nn
 from torchmetrics import F1Score
 from torch import optim
-
+import sys
 
 #%% 1 mixup_batch
 def mixup_batch(batch,alpha = 0.8):
@@ -122,7 +123,7 @@ def custom_print_decorator(func):
 
 #%%
 
-scheduler = {
+scheduler_dict = {
     'ReduceLROnPlateau': optim.lr_scheduler.ReduceLROnPlateau,
     'StepLR': optim.lr_scheduler.StepLR,
     'MultiStepLR': optim.lr_scheduler.MultiStepLR,
