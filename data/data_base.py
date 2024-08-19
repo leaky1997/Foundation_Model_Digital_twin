@@ -4,11 +4,6 @@ from torch.utils.data import Dataset
 import os
 
 
-import numpy as np
-import torch
-from torch.utils.data import Dataset
-import os
-
 class BaseDataset(Dataset):
     def __init__(self, args, flag):
         self.flag = flag
@@ -24,21 +19,6 @@ class BaseDataset(Dataset):
 
         self.create_splits()
         self.select_data_based_on_flag()
-
-    # def load_data(self, data_dict):
-    #     for name, file_path in data_dict.items():
-    #         if 'data' in name:
-    #             self.data.append(np.load(file_path).astype(np.float32))
-    #         elif 'label' in name:
-    #             self.labels.append(np.load(file_path).astype(np.float32))
-
-    #     self.data = np.concatenate(self.data, axis=0)
-        
-    #     if self.labels:
-    #         self.labels = np.concatenate(self.labels, axis=0)
-    #     else:
-    #         self.has_labels = False
-    #         self.labels = np.zeros(len(self.data))  # 如果没有标签文件，生成一个全零的标签
 
     def load_data_from_directory(self, directory):
         data_files = []
@@ -122,11 +102,23 @@ class ClassificationDataset(BaseDataset):
 class AnomalyDetectionDataset(BaseDataset):
     def __init__(self, args, flag):
         super().__init__(args, flag)
+        self.process_anomaly_data()
+
+    def process_anomaly_data(self):
+        if self.flag == 'train':
+            # 删除所有非0类别的样本
+            normal_indices = np.where(self.selected_labels == 0)[0]
+            self.selected_data = self.selected_data[normal_indices]
+            self.selected_labels = self.selected_labels[normal_indices]
+        elif self.flag in ['val', 'test']:
+            # 将所有非0类别的样本的标签设置为1
+            anomaly_indices = np.where(self.selected_labels != 0)[0]
+            self.selected_labels[anomaly_indices] = 1
 
     def construct_sample_and_label(self, idx):
-        pass
-        # 异常检测任务的特定处理
-        # return sample, label
+        sample = self.selected_data[idx]
+        label = self.selected_labels[idx]
+        return sample, label
 
 class ImputationDataset(BaseDataset):
     def __init__(self, args, flag):

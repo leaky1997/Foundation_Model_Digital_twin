@@ -197,6 +197,15 @@ def metric(pred, true):
 
     return mae, mse, rmse, mape, mspe
 
+def cal_accuracy(y_pred, y_true):
+    # 如果 y_pred 是 one-hot 编码，转换为实数形式
+    if len(y_pred.shape) > 1 and y_pred.shape[1] > 1:
+        y_pred = np.argmax(y_pred, axis=1)
+    
+    return np.mean(y_pred == y_true)
+
+#%% mask
+
 def apply_random_mask_for_imputation(x, patch_len, mask_rate):
     """
     Apply a random mask to the input tensor.
@@ -233,3 +242,31 @@ def apply_random_mask_for_imputation(x, patch_len, mask_rate):
     x_masked = x.masked_fill(mask == 0, 0)
 
     return x_masked, mask
+
+#%% 
+import torch
+import random
+import torch.nn.functional as F
+def split_batch(batch_x, seq_len, pred_len):
+    """
+    从batch_x中拆分出batch_x和batch_y
+    """
+    batch_y = batch_x[:, -pred_len:]
+    batch_x = batch_x[:, :seq_len]
+    return batch_x, batch_y
+
+def resample(input_tensor, min_factor=1, max_factor=4):
+    """
+    将输入以2的倍数进行降采样或上采样，其中倍数随机生成
+    """
+    factor = 2 ** random.uniform(min_factor, max_factor)
+    
+    if factor < 1:
+        scale_factor = 1 / factor
+        return F.interpolate(input_tensor, scale_factor=scale_factor, mode='nearest')
+    else:
+        return input_tensor[:, ::int(factor)]
+# # 示例用法
+# input_tensor = torch.randn(1, 16, 10)  # 假设输入张量的形状为 (batch_size, sequence_length, feature_dim)
+# resampled_tensor = resample(input_tensor)
+# %%

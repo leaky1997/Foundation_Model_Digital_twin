@@ -1,13 +1,14 @@
+# Description: This file contains the configuration of the multi-task dataset.        'Forecasting':, 'Classification': , 'Imputation': ,'Anomaly_detection':
 task_dataset:
-  # THU_006_Forecasting:
-  #   task_name: Forecasting
-  #   dataset_name: THU_006
-  #   data_dir: datasets/a_006_THU_pro
-  #   seq_len: 2048
-  #   label_len: 0
-  #   pred_len: 2048
-  #   sample_rate: 40960
-  #   enc_in: 2
+  THU_006_Forecasting:
+    task_name: Forecasting
+    dataset_name: THU_006
+    data_dir: datasets/a_006_THU_pro
+    seq_len: 2048
+    label_len: 0
+    pred_len: 2048
+    sample_rate: 40960
+    enc_in: 2
     
   THU_006_Classification:
     task_name: Classification
@@ -20,44 +21,54 @@ task_dataset:
     enc_in: 2
     num_class: 4
 
-  # THU_006_Imputation:
-  #   task_name: Imputation
-  #   dataset_name: THU_006
-  #   data_dir: datasets/a_006_THU_pro
-  #   seq_len: 2048
-  #   label_len: 0
-  #   pred_len: 2048
-  #   sample_rate: 40960
-  #   enc_in: 2
+  THU_006_Imputation:
+    task_name: Imputation
+    dataset_name: THU_006
+    data_dir: datasets/a_006_THU_pro
+    seq_len: 2048
+    label_len: 0
+    pred_len: 2048
+    sample_rate: 40960
+    enc_in: 2
 
-  # DIRG_020_Classification:
-  #   task_name: Classification
-  #   dataset_name: DIRG_020
-  #   data_dir: datasets/a_020_DIRG_pro_FD
-  #   seq_len: 2048
-  #   label_len: 0
-  #   pred_len: 2048
-  #   sample_rate: 40960
-  #   enc_in: 6
-  #   num_class: 7
+  THU_006_Anomaly_detection:
+    task_name: Anomaly_detection
+    dataset_name: THU_006
+    data_dir: datasets/a_006_THU_pro
+    seq_len: 2048
+    label_len: 0
+    pred_len: 2048
+    sample_rate: 40960
+    enc_in: 2
 
-  # DIRG_020_Forecasting:
-  #   task_name: Forecasting
-  #   dataset_name: DIRG_020
-  #   data_dir: datasets/a_020_DIRG_pro_FD
-  #   seq_len: 2048
-  #   label_len: 0
-  #   pred_len: 2048
-  #   sample_rate: 40960
-  #   enc_in: 6
+  DIRG_020_Classification:
+    task_name: Classification
+    dataset_name: DIRG_020
+    data_dir: datasets/a_020_DIRG_pro_FD
+    seq_len: 2048
+    label_len: 0
+    pred_len: 2048
+    sample_rate: 40960
+    enc_in: 6
+    num_class: 7
 
-  # DIRG_020_Imputation:
-  #   task_name: Imputation
-  #   dataset_name: DIRG_020
-  #   data_dir: datasets/a_020_DIRG_pro_FD
-  #   seq_len: 2048
-  #   label_len: 0
-  #   pred_len: 2048
-  #   sample_rate: 40960
-  #   enc_in: 6
+  DIRG_020_Forecasting:
+    task_name: Forecasting
+    dataset_name: DIRG_020
+    data_dir: datasets/a_020_DIRG_pro_FD
+    seq_len: 2048
+    label_len: 0
+    pred_len: 2048
+    sample_rate: 40960
+    enc_in: 6
+
+  DIRG_020_Imputation:
+    task_name: Imputation
+    dataset_name: DIRG_020
+    data_dir: datasets/a_020_DIRG_pro_FD
+    seq_len: 2048
+    label_len: 0
+    pred_len: 2048
+    sample_rate: 40960
+    enc_in: 6
 

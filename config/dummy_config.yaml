@@ -39,6 +39,7 @@ train_epochs: 10
 warmup_epochs: 0
 patience: 100
 num_epochs: 300
+resample: None
 
 # 3 data_task
 
@@ -46,6 +47,9 @@ num_epochs: 300
 num_workers: 32
 ## task 
 task_name: ALL_task
+
+signal_threshold: 0.5
+
 # 4 model
 
 ## 4.1 model_setting
@@ -63,6 +67,6 @@ wandb_flag: True
 task_name: "dummy_task"
 model: Sparse_Fre_Transformer
 data: dummy_data
-monitor: val_loss  # ???
+monitor: val_Forecasting_loss  # ???
 scheduler: ReduceLROnPlateau
 run_mode: offline # online offline disabled

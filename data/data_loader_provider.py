@@ -21,6 +21,9 @@ DATASET_TASK_CLASS = {
 }
 
 def get_dataloader(args, task_data_name,flag):
+    
+    
+        
     dataset_task = DATASET_TASK_CLASS[task_data_name]
     dataset = dataset_task(args, flag=flag)
     shuffle = flag == 'train'
@@ -30,6 +33,18 @@ def get_dataloader(args, task_data_name,flag):
         shuffle=shuffle,
         num_workers=args.num_workers
     )
+    
+    if flag in ['test','val'] and 'AnomalyDetection' in task_data_name:
+        dataset_train = dataset_task(args, flag='train')
+        dataloader_train = DataLoader(
+            dataset=dataset_train,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers
+        )
+        dataset = [dataset_train,dataset]
+        dataloader = [dataloader_train,dataloader]
+    
     return dataset, dataloader
 
 def get_data(args,task_data_config,flag = 'train'):

@@ -87,7 +87,7 @@ class Model(nn.Module):
                 self.mask_tokens[dataset_name] = torch.zeros(
                     1, self.configs_list[i][1]['enc_in'], 1, self.args.d_model)
 
-            if self.configs_list[i][1]['task_name'] == 'classification':
+            if self.configs_list[i][1]['task_name'] == 'Classification':
                 self.category_tokens[task_data_name] = torch.randn(
                     1, self.configs_list[i][1]['enc_in'], self.configs_list[i][1]['num_class'], self.args.d_model) * 0.02
 
@@ -100,9 +100,9 @@ class Model(nn.Module):
             task_data_name = self.configs_list[i][0]
             task_config = self.configs_list[i][1]
             
-            if task_config['task_name'] == 'classification':
+            if task_config['task_name'] == 'Classification':
                 self.cls_nums[task_data_name] = task_config['num_class']
-            elif task_config['task_name'] == 'long_term_forecast':
+            elif task_config['task_name'] == 'Forecasting':
                 self.cls_nums[task_data_name] = self._calculate_forecast_cls_num(task_config)
 
     def _calculate_forecast_cls_num(self, task_config): # TODO check
@@ -193,16 +193,16 @@ class Model(nn.Module):
     
     def _init_task_submodel(self):
         self.task_to_method = {
-            'long_term_forecast': self.forecast,
-            'short_term_forecast': self.forecast,
-            'classification': self.classification,
-            'imputation': self.imputation,
-            'anomaly_detection': self.anomaly_detection
+            # 'Forecasting': self.forecast,
+            'Forecasting': self.forecast,
+            'Classification': self.classification,
+            'Imputation': self.imputation,
+            'Anomaly_detection': self.anomaly_detection
         }
     
     def classification(self, x, task_id):
         # 获取数据集名称和任务数据名称
-        dataset_name = self.configs_list[task_id][1]['dataset']
+        dataset_name = self.configs_list[task_id][1]['dataset_name']
         task_data_name = self.configs_list[task_id][0]
 
         # 获取前缀提示和任务提示
@@ -219,7 +219,7 @@ class Model(nn.Module):
 
         # 准备提示信息
         x = self.prepare_prompt(
-            x, n_vars, prefix_prompt, task_prompt, task_prompt_num, task_name='classification'
+            x, n_vars, prefix_prompt, task_prompt, task_prompt_num, task_name='Classification'
         )
 
         # 通过主干网络处理
@@ -230,7 +230,7 @@ class Model(nn.Module):
 
         return x
     
-    def imputation(self, x mask, task_id):
+    def imputation(self, x, mask, task_id):
         # 获取数据集名称
         dataset_name = self.configs_list[task_id][1]['dataset']
 
@@ -267,7 +267,7 @@ class Model(nn.Module):
 
     def forecast(self, x, task_id):
         # 获取数据集名称和任务数据名称
-        dataset_name = self.configs_list[task_id][1]['dataset']
+        dataset_name = self.configs_list[task_id][1]['dataset_name']
         task_data_name = self.configs_list[task_id][0]
 
         # 获取前缀提示和任务提示
@@ -298,7 +298,7 @@ class Model(nn.Module):
         x = x[:, -task_seq_num:]
 
         # 反归一化处理
-        x = self.denormalize(x, means, stdev)
+        x = denormalize(x, means, stdev)
 
         return x
 
@@ -329,7 +329,7 @@ class Model(nn.Module):
         x = x[:, :seq_len]
 
         # 反归一化处理
-        x = self.denormalize(x, means, stdev)
+        x = denormalize(x, means, stdev)
 
         return x
     
@@ -351,7 +351,7 @@ class Model(nn.Module):
     #         x[:, :, self.prompt_num:] = add_position_embedding(x[:, :, self.prompt_num:])
     #         return x
 
-    #     def handle_classification(x, this_prompt, task_prompt):
+    #     def handle_Classification(x, this_prompt, task_prompt):
     #         this_function_prompt = task_prompt.repeat(x.shape[0], 1, 1, 1)
     #         x = add_position_embedding(x)
     #         x = add_prompt_tokens(x, this_prompt)
@@ -379,7 +379,7 @@ class Model(nn.Module):
             
     #     self.task_handlers = {
     #     'forecast': handle_forecast,
-    #     'classification': handle_classification,
+    #     'Classification': handle_Classification,
     #     'imputation': handle_imputation,
     #     'anomaly_detection': handle_anomaly_detection
     # }
@@ -407,7 +407,7 @@ class Model(nn.Module):
             x = torch.cat((this_prompt, x, this_function_prompt), dim=2)
             x[:, :, self.prompt_num:] = x[:, :, self.prompt_num:] + \
                 self.position_embedding(x[:, :, self.prompt_num:])
-        elif task_name == 'classification':
+        elif task_name == 'Classification':
             this_function_prompt = task_prompt.repeat(x.shape[0], 1, 1, 1)
             x = x + self.position_embedding(x)
             x = torch.cat((this_prompt, x, this_function_prompt), dim=2) # B,C,PROMPT.D  concate x  concate B,C,1,D 
@@ -516,14 +516,13 @@ class Model(nn.Module):
         x = torch.cat((x, gridx), dim=-1).contiguous()
         return x   
     
-    def forward(self, x_enc, x_mark_enc, x_dec=None, x_mark_dec=None,
-                mask=None, task_id=None, task_name=None, enable_mask=None):
+    def forward(self, x_enc, mask=None, task_id=None, task_name=None):
         if task_name in self.task_to_method:
             method = self.task_to_method[task_name]
             if task_name == 'imputation':
-                dec_out = method(x_enc, x_mark_enc, mask, task_id)
+                dec_out = method(x_enc, mask, task_id)
             else:
-                dec_out = method(x_enc, x_mark_enc, task_id)
+                dec_out = method(x_enc, task_id)
             return dec_out  # [B, L, D] or CLS is [B, N]
         else:
             raise ValueError(f"Unknown task name: {task_name}")
@@ -556,11 +555,11 @@ if __name__ == '__main__':
     model = Model(args, configs_list)
 
     # 创建输入数据
-    B, L, C = 2, 2048, 111
+    B, L, C = 2, 2048, 2
     x_enc = torch.randn(B, L, C)
     x_mark_enc = torch.randn(B, L, C)
-    # 假设任务名称为 'long_term_forecast'
-    task_name = 'long_term_forecast' # long_term_forecast classification
+    # 假设任务名称为 'Forecasting'
+    task_name = 'Forecasting' # Forecasting classification
     task_id = 0  # 假设任务ID为0
 
     output = model.forward(x_enc, x_mark_enc, task_id=task_id, task_name=task_name)

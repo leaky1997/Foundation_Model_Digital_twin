@@ -423,6 +423,7 @@ class AFNO1D(nn.Module):
         dtype = x.dtype
         
         x_orig = x
+        n = x.shape[1]
         x = torch.fft.rfft(x, dim=1, norm="ortho")
         
         # x = x.permute(0,1,3,2) # -> N, L, C,P 
@@ -466,7 +467,7 @@ class AFNO1D(nn.Module):
         
         x = torch.view_as_complex(x)
         x = x.reshape(B, x.shape[1], x.shape[2], P)
-        x = torch.fft.irfft(x, dim=1, norm="ortho")
+        x = torch.fft.irfft(x,n=n, dim=1, norm="ortho")
 
         x = rearrange(x, 'b l c p -> b l p c') 
         
